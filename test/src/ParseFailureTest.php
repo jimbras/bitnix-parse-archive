@@ -19,9 +19,6 @@ namespace Bitnix\Parse;
 
 use PHPUnit\Framework\TestCase;
 
-/**
- * @version 0.1.0
- */
 class ParseFailureTest extends TestCase {
 
     public function testCustomConstructor() {

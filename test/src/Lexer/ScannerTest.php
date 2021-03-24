@@ -22,26 +22,25 @@ use Bitnix\Parse\ParseFailure,
     PHPUnit\Framework\TestCase;
 
 /**
- * ...
- *
  * @version 0.1.0
  */
 class ScannerTest extends TestCase {
 
-    private ?Scanner $lexer;
+    private Scanner $lexer;
 
     public function setUp() : void {
         $state = new TokenSet([
-            'T_WS'  => '\s+',
             'T_INT' => '\d+',
             'T_STR' => '[a-zA-z]+'
+        ], [
+            'T_WS' => '\s+'
         ]);
-        $state->on('T_WS', fn($shifter) => $shifter->skip());
-        $this->lexer = new Scanner(new TokenStream($state, '1 2 3 four'));
+
+        $this->lexer = new Scanner(TokenStream::fromString($state, '1 2 3 four'));
     }
 
     public function tearDown() : void {
-        $this->lexer = null;
+        unset($this->lexer);
     }
 
     public function testDemandError() {
@@ -89,10 +88,11 @@ class ScannerTest extends TestCase {
             new Token('T_INT', '2'),
             new Token('T_INT', '3'),
             new Token('T_STR', 'four'),
-            new Token('T_EOS', '')
+            new Token('T_EOS')
         ];
 
-        $columns = [1, 2, 4, 6, 10];
+        // 1 2 3 four
+        $columns = [1, 3, 5, 7, 11];
 
         $this->assertEquals($expected[0], $this->lexer->peek(0));
         $this->assertEquals($expected[1], $this->lexer->peek(1));
@@ -105,9 +105,11 @@ class ScannerTest extends TestCase {
 
         while ($this->lexer->valid()) {
             $this->assertEquals(\array_shift($columns), $this->lexer->position()->column());
-            //echo $this->lexer->position(), PHP_EOL;
             $tokens[] = $this->lexer->next();
         }
+
+        // T_EOS
+        $tokens[] = $this->lexer->next();
 
         $this->assertEquals($expected, $tokens);
     }
@@ -120,15 +122,18 @@ class ScannerTest extends TestCase {
             new Token('T_INT', '2'),
             new Token('T_INT', '3'),
             new Token('T_STR', 'four'),
-            new Token('T_EOS', '')
+            new Token('T_EOS')
         ];
 
-        $columns = [1, 2, 4, 6, 10];
+        $columns = [1, 3, 5, 7, 11];
 
         while ($this->lexer->valid()) {
             $this->assertEquals(\array_shift($columns), $this->lexer->position()->column());
             $tokens[] = $this->lexer->next();
         }
+
+        // T_EOS
+        $tokens[] = $this->lexer->next();
 
         $this->assertEquals($expected, $tokens);
     }

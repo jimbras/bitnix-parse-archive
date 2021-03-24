@@ -19,9 +19,6 @@ namespace Bitnix\Parse;
 
 use PHPUnit\Framework\TestCase;
 
-/**
- * @version 0.1.0
- */
 class TokenTest extends TestCase {
 
     public function testFullConstructor() {
@@ -33,7 +30,7 @@ class TokenTest extends TestCase {
     public function testDefaultConstructor() {
         $token = new Token('T_FOO');
         $this->assertEquals('T_FOO', $token->type());
-        $this->assertEquals('', $token->lexeme());
+        $this->assertNull($token->lexeme());
     }
 
     public function testToString() {

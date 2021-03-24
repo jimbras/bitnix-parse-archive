@@ -15,9 +15,24 @@
  *  along with this program. If not, see <https://www.gnu.org/licenses/agpl-3.0.txt>.
  */
 
-namespace Bitnix\Parse\Parser;
+namespace Bitnix\Parse\Lexer;
+
+use RuntimeException;
 
 /**
- * @version 0.1.0
+ * No frills lexer state context.
  */
-interface MixfixParser extends PrefixParser, InfixParser {}
+interface Stack {
+
+    /**
+     * @param State $state
+     * @throws RuntimeException
+     */
+    public function push(State $state) : void;
+
+    /**
+     * @throws RuntimeException
+     */
+    public function pop() : State;
+
+}

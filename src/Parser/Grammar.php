@@ -17,13 +17,14 @@
 
 namespace Bitnix\Parse\Parser;
 
-use Bitnix\Parse\Expression,
+use RuntimeException,
+    Bitnix\Parse\Expression,
     Bitnix\Parse\ParseFailure,
     Bitnix\Parse\Parser,
     Bitnix\Parse\Token;
 
 /**
- * @version 0.1.0
+ * ...
  */
 interface Grammar {
 
@@ -38,6 +39,7 @@ interface Grammar {
      * @param Token $token
      * @return Expression
      * @throws ParseFailure
+     * @throws RuntimeException
      */
     public function prefix(Parser $parser, Token $token) : Expression;
 
@@ -47,7 +49,7 @@ interface Grammar {
      * @param Token $token
      * @return Expression
      * @throws ParseFailure
+     * @throws RuntimeException
      */
     public function infix(Parser $parser, Expression $left, Token $token) : Expression;
-
 }

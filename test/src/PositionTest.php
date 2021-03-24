@@ -25,10 +25,29 @@ use InvalidArgumentException,
  */
 class PositionTest extends TestCase {
 
-    public function testUnkownPositionMarker() {
+    public function testUnknownPosition() {
         $pos = new Position();
-        $this->assertEquals('', $pos->marker());
-        $this->assertEquals('  ', $pos->marker(2));
+
+        $this->assertNull($pos->buffer());
+        $this->assertEquals(-1, $pos->line());
+        $this->assertEquals(-1, $pos->column());
+        $this->assertFalse($pos->known());
+
+        $pos = new Position('');
+
+        $this->assertNull($pos->buffer());
+        $this->assertEquals(-1, $pos->line());
+        $this->assertEquals(-1, $pos->column());
+        $this->assertFalse($pos->known());
+    }
+
+    public function testKnownPosition() {
+        $pos = new Position('Hello', 10, 2);
+
+        $this->assertEquals('Hello', $pos->buffer());
+        $this->assertEquals(10, $pos->line());
+        $this->assertEquals(3, $pos->column());
+        $this->assertTrue($pos->known());
     }
 
     public function testKnownPositionLocation() {
@@ -40,7 +59,7 @@ class PositionTest extends TestCase {
         $this->assertEquals('  [1:2]', $pos->location(2, '[%d:%d]'));
     }
 
-    public function testUnkownPositionLocation() {
+    public function testUnknownPositionLocation() {
         $pos = new Position();
         $this->assertEquals('unknown position', $pos->location());
         $this->assertEquals('  unknown position', $pos->location(2));
@@ -49,22 +68,10 @@ class PositionTest extends TestCase {
         $this->assertEquals('  ???', $pos->location(2, '[%d:%d]', '???'));
     }
 
-    public function testKnownPosition() {
-        $pos = new Position('Hello', 1, 1);
-
-        $this->assertTrue($pos->known());
-        $this->assertEquals('Hello', $pos->buffer());
-        $this->assertEquals(1, $pos->line());
-        $this->assertEquals(2, $pos->column());
-    }
-
-    public function testUnkownPosition() {
+    public function testUnkownPositionMarker() {
         $pos = new Position();
-
-        $this->assertFalse($pos->known());
-        $this->assertNull($pos->buffer());
-        $this->assertEquals(-1, $pos->line());
-        $this->assertEquals(-1, $pos->column());
+        $this->assertEquals('', $pos->marker());
+        $this->assertEquals('  ', $pos->marker(2));
     }
 
     public function testKownPositionMarker() {
@@ -101,24 +108,73 @@ class PositionTest extends TestCase {
         $this->assertEquals(13, $pos->column());
         $this->assertEquals('line 1, column 13', $pos->location());
         $this->assertEquals($buffer . $marker, $pos->marker());
+
+        $buffer = "Say: ご飯が熱い。 Gohan ga atsui. (The rice is hot.)\n";
+      $marker = "                                                    ^"; // weird font spacing!!!
+        $offset = \strpos($buffer, "\n");
+
+        $pos = new Position($buffer, 1, $offset);
+        $this->assertEquals($buffer, $pos->buffer());
+        $this->assertEquals(1, $pos->line());
+        $this->assertEquals(47, $pos->column());
+        $this->assertEquals('line 1, column 47', $pos->location());
+        $this->assertEquals($buffer . $marker, $pos->marker());
     }
 
-    public function testInvalidOffset() {
+    public function testToStringUnknownPosition() {
+        $pos = new Position();
+        $this->assertEquals('unknown position', (string) $pos);
+    }
+
+    public function testToStringKnownPosition() {
+        $pos = new Position("Hello\n", 10, 3);
+        $exp =  "line 10, column 4\n";
+        $exp .= "Hello\n";
+        $exp .= '   ^';
+        $this->assertEquals($exp, (string) $pos);
+    }
+
+    /**
+     * @dataProvider validBuffer
+     */
+    public function testValidBuffer(string $buffer = null) {
+        $pos = new Position($buffer);
+        $this->assertEquals($buffer, $pos->buffer());
+    }
+
+    public function validBuffer() : array {
+        return [
+            [null],  // unknown
+            [''], // unknown
+            ["\n"],
+            ['foo'],
+            ["foo\n"]
+        ];
+    }
+
+    /**
+     * @dataProvider invalidBuffer
+     */
+    public function testInvalidBuffer(string $buffer) {
         $this->expectException(InvalidArgumentException::CLASS);
-        new Position("foo\n", 1, 4);
+        $pos = new Position($buffer);
+    }
+
+    public function invalidBuffer() : array {
+        return [
+            ["foo\nbar\n"],
+            ["foo\nbar\nbaz"]
+        ];
     }
 
     public function testInvalidLine() {
         $this->expectException(InvalidArgumentException::CLASS);
-        new Position("foo\n", 0);
+        $pos = new Position('Hello', 0);
     }
 
-    public function testInvalidBuffer() {
+    public function testInvalidOffset() {
         $this->expectException(InvalidArgumentException::CLASS);
-        new Position("foo\nbar");
+        $pos = new Position('Hello', 1, 10);
     }
 
-    public function testToString() {
-        $this->assertIsString((string) new Position());
-    }
 }

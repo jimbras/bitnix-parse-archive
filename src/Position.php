@@ -20,24 +20,26 @@ namespace Bitnix\Parse;
 use InvalidArgumentException;
 
 /**
- * @version 0.1.0
+ * Some component position frozen in parsing time.
+ *
+ * Expects valid UTF-8 to work properly.
  */
 final class Position {
 
     /**
-     * @var null|string
+     * @var string
      */
     private ?string $buffer = null;
+
+    /**
+     * @var string
+     */
+    private string $eol = '';
 
     /**
      * @var int
      */
     private int $line = -1;
-
-    /**
-     * @var int
-     */
-    private int $offset = -1;
 
     /**
      * @var int
@@ -50,51 +52,71 @@ final class Position {
     private int $marker = -1;
 
     /**
-     * @var string
+     * @param null|string $buffer A single input line
+     * @param int $line MUST be >= 1
+     * @param int $offset Bythe offset... Easier to work with in PHP
+     * @throws InvalidArgumentException If client ignores the golden rules
      */
-    private string $eol = '';
-
-    /**
-     * @param null|string $buffer
-     * @param int $line
-     * @param int $offset
-     * @throws InvalidArgumentException
-     */
-    public function __construct(string $buffer = null, int $line = -1, int $offset = -1) {
-        if ($buffer !== null) {
-
-            // multiline not allowed
-            $lines = \preg_split('~\R~u', $buffer, -1, \PREG_SPLIT_NO_EMPTY);
-            if (isset($lines[1])) {
-                throw new InvalidArgumentException('Multiline position buffer not allowed');
-            }
-
-            // line must be >= 1
-            if (1 > $line) {
-                throw new InvalidArgumentException('Invalid position line number');
-            }
-
-            // offset must exist in buffer
-            if (!isset($buffer[$offset])) {
-                throw new InvalidArgumentException('Invalid position buffer offset');
-            }
-
-            // add newline if needed
-            if (!\preg_match('~\R$~u', $buffer)) {
-                $this->eol = \PHP_EOL;
-            }
-
-            $this->buffer = $buffer;
-            $this->line = $line;
-            $this->offset = $offset;
-
-            $part = \substr($buffer, 0, $offset);
-            $this->column = \mb_strlen($part, 'UTF-8') + 1;
-            $this->marker = \mb_strwidth($part, 'UTF-8');
+    public function __construct(string $buffer = null, int $line = 1, int $offset = 0) {
+        if (isset($buffer[0])) {
+            $this->setupBuffer($buffer);
+            $this->setupLine($line);
+            $this->setupColumn($offset);
         }
     }
 
     /**
+     * @param string $buffer
+     * @throws InvalidArgumentException
+     */
+    private function setupBuffer(string $buffer) : void {
+        $lines = \preg_split('~\R~u', $buffer);
+        $count = \count($lines);
+
+        if ($count > 2 || $count === 2 && '' !== $lines[1]) {
+            throw new InvalidArgumentException(
+                'Multiline parse position buffer not allowed'
+            );
+        }
+
+        if (1 === $count) {
+            $this->eol = \PHP_EOL;
+        }
+
+        $this->buffer = $buffer;
+    }
+
+    /**
+     * @param int $line
+     * @throws InvalidArgumentException
+     */
+    private function setupLine(int $line) : void {
+        if ($line < 1) {
+            throw new InvalidArgumentException(\sprintf(
+                'Parse position must be >= 1, got %d', $line
+            ));
+        }
+        $this->line = $line;
+    }
+
+    /**
+     * @param int $offset
+     * @throws InvalidArgumentException
+     */
+    private function setupColumn(int $offset) : void {
+
+        if (!isset($this->buffer[$offset]) && '' !== $this->buffer) {
+            throw new InvalidArgumentException('Parse position offset not present in buffer');
+        }
+
+        $part = \substr($this->buffer, 0, $offset);
+        $this->column = \mb_strlen($part, 'UTF-8') + 1;
+        $this->marker = \mb_strwidth($part, 'UTF-8');
+    }
+
+    /**
+     * Returns true if the input buffer is anything but null or an empty string.
+     *
      * @return bool
      */
     public function known() : bool {
@@ -102,6 +124,8 @@ final class Position {
     }
 
     /**
+     * The buffer is the context that gives sense to this position.
+     *
      * @return null|string
      */
     public function buffer() : ?string {
@@ -109,6 +133,8 @@ final class Position {
     }
 
     /**
+     * If known starts at 1, -1 otherwise.
+     *
      * @return int
      */
     public function line() : int {
@@ -116,6 +142,8 @@ final class Position {
     }
 
     /**
+     * If known starts at 1, -1 otherwise.
+     *
      * @return int
      */
     public function column() : int {
@@ -124,16 +152,19 @@ final class Position {
 
     /**
      * @param int $indent
+     * @param string $pad
      * @return string
      */
-    private function prefix(int $indent) : string {
-        return \str_repeat(' ', \max(0, $indent));
+    private function pad(int $indent, string $pad = ' ') : string {
+        return \str_repeat($pad, \max(0, $indent));
     }
 
     /**
-     * @param int $indent
-     * @param string $known
-     * @param string $unknown
+     * User friendly location string.
+     *
+     * @param int $indent Left padding value
+     * @param string $known Sprintf(ed) patterm to display known locations. Line comes before column.
+     * @param string $unknown Literal string if teh position is not known.
      * @return string
      */
     public function location(
@@ -141,23 +172,24 @@ final class Position {
         string $known = 'line %d, column %d',
         string $unknown = 'unknown position') : string {
 
-        $prefix = $this->prefix($indent);
+        $prefix = $this->pad($indent);
+        $location = $this->known()
+            ? \sprintf($known, $this->line, $this->column)
+            : $unknown;
 
-        if ($this->known()) {
-            return $prefix . \sprintf($known, $this->line, $this->column);
-        }
-
-        return $prefix . $unknown;
+        return $prefix . $location;
     }
 
     /**
-     * @param int $indent
-     * @param string $pad
-     * @param string $marker
+     * Unicode friendly position pointer.
+     *
+     * @param int $indent Left padding value
+     * @param string $pad One characte to use as padding (default is <space>)
+     * @param string $marker One characte to use as marker (default is <^>)
      * @return string
      */
     public function marker(int $indent = 0, string $pad = ' ', string $marker = '^') : string {
-        $prefix = $this->prefix($indent);
+        $prefix = $this->pad($indent);
 
         if ($this->known()) {
             $pad = $pad[0] ?? ' ';
@@ -166,7 +198,7 @@ final class Position {
                 . $this->buffer
                 . $this->eol
                 . $prefix
-                . \str_repeat($pad, $this->marker)
+                . $this->pad($this->marker, $pad)
                 . $marker;
         }
 

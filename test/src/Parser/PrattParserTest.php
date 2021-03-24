@@ -19,203 +19,105 @@ namespace Bitnix\Parse\Parser;
 
 use Bitnix\Parse\Expression,
     Bitnix\Parse\Lexer,
-    Bitnix\Parse\ParseFailure,
-    Bitnix\Parse\Parser,
-    Bitnix\Parse\Position,
     Bitnix\Parse\Token,
-    Bitnix\Parse\Tokenizer,
+    Bitnix\Parse\Lexer\Scanner,
     Bitnix\Parse\Lexer\TokenSet,
     Bitnix\Parse\Lexer\TokenStream,
-    Bitnix\Parse\Lexer\Scanner,
     PHPUnit\Framework\TestCase;
 
-class ValueExpression implements Expression {
-    private int $value = 0;
-    public function __construct(int $value) {
-        $this->value = $value;
-    }
-    public function value() : int {
-        return $this->value;
-    }
+class Value implements Expression {
+    public function __construct(public int $value) {}
 }
 
-class ValueParser implements PrefixParser {
-    public function parsePrefix(Parser $parser, Token $token) : Expression {
-        return new ValueExpression((int) $token->lexeme());
-    }
-}
-
-class OperationParser implements InfixParser {
-    private int $precedence;
-    private string $operation;
-
-    public function __construct(string $operation, int $precedence) {
-        $this->precedence = $precedence;
-        $this->operation = $operation;
-    }
-
-    public function precedence() : int {
-        return $this->precedence;
-    }
-
-    public function parseInfix(Parser $parser, Expression $left, Token $token) : Expression {
-        $right = $parser->expression($this->precedence);
-        $l = $left->value();
-        $r = (int) $right->value();
-
-        switch ($this->operation) {
-            case '+':
-                $value = $l + $r;
-                break;
-            default:
-                // *
-                $value = $l * $r;
-                break;
-        }
-        return new ValueExpression($value);
-    }
-}
-
-/**
- * ...
- *
- * @version 0.1.0
- */
 class PrattParserTest extends TestCase {
 
-    public function testParserDelegatesValidToLexer() {
-        $lexer = $this->createMock(Lexer::CLASS);
-        $lexer
-            ->expects($this->once())
-            ->method('valid')
-            ->will($this->returnValue(true));
+    private ?Lexer $lexer = null;
+    private ?Grammar $grammar = null;
+    private ?PrattParser $parser = null;
 
-        $parser = new PrattParser($lexer, $this->createMock(Grammar::CLASS));
-        $this->assertTrue($parser->valid());
+    public function setUp() : void {
+        $this->lexer = $this->createMock(Lexer::CLASS);
+        $this->grammar = $this->createMock(Grammar::CLASS);
+        $this->parser = $this->getMockBuilder(PrattParser::CLASS)
+            ->setConstructorArgs([$this->lexer, $this->grammar])
+            ->getMockForAbstractClass();
     }
 
-    public function testParserDelegatesNextToLexer() {
-        $token = new Token('T_FOO', 'bar');
-        $lexer = $this->createMock(Lexer::CLASS);
-        $lexer
-            ->expects($this->once())
-            ->method('next')
-            ->will($this->returnValue($token));
-
-        $parser = new PrattParser($lexer, $this->createMock(Grammar::CLASS));
-        $this->assertSame($token, $parser->next());
-    }
-
-    public function testParserDelegatesPositionToLexer() {
-        $position = new Position();
-        $lexer = $this->createMock(Lexer::CLASS);
-        $lexer
-            ->expects($this->once())
-            ->method('position')
-            ->will($this->returnValue($position));
-
-        $parser = new PrattParser($lexer, $this->createMock(Grammar::CLASS));
-        $this->assertSame($position, $parser->position());
-    }
-
-    public function testParserDelegatesErrorToLexer() {
-        $this->expectException(ParseFailure::CLASS);
-        $lexer = $this->createMock(Lexer::CLASS);
-        $lexer
-            ->expects($this->once())
-            ->method('error')
-            ->with('kaput')
-            ->will($this->throwException(new ParseFailure('kaput')));
-
-        $parser = new PrattParser($lexer, $this->createMock(Grammar::CLASS));
-        $parser->error('kaput');
-    }
-
-    public function testParserDelegatesPeekToLexer() {
-        $token = new Token('T_FOO', 'bar');
-        $lexer = $this->createMock(Lexer::CLASS);
-        $lexer
-            ->expects($this->once())
-            ->method('peek')
-            ->with(5)
-            ->will($this->returnValue($token));
-
-        $parser = new PrattParser($lexer, $this->createMock(Grammar::CLASS));
-        $this->assertSame($token, $parser->peek(5));
-    }
-
-    public function testParserDelegatesMatchToLexer() {
-        $lexer = $this->createMock(Lexer::CLASS);
-        $lexer
-            ->expects($this->once())
-            ->method('match')
-            ->with('T_FOO')
-            ->will($this->returnValue(true));
-
-        $parser = new PrattParser($lexer, $this->createMock(Grammar::CLASS));
-        $this->assertTrue($parser->match('T_FOO'));
-    }
-
-    public function testParserDelegatesConsumeToLexer() {
-        $token = new Token('T_FOO', 'bar');
-        $lexer = $this->createMock(Lexer::CLASS);
-        $lexer
-            ->expects($this->once())
-            ->method('consume')
-            ->with('T_FOO')
-            ->will($this->returnValue($token));
-
-        $parser = new PrattParser($lexer, $this->createMock(Grammar::CLASS));
-        $this->assertSame($token, $parser->consume('T_FOO'));
-    }
-
-    public function testParserDelegatesDemandToLexer() {
-        $token = new Token('T_FOO', 'bar');
-        $lexer = $this->createMock(Lexer::CLASS);
-        $lexer
-            ->expects($this->once())
-            ->method('demand')
-            ->with('T_FOO', 'kaput')
-            ->will($this->returnValue($token));
-
-        $parser = new PrattParser($lexer, $this->createMock(Grammar::CLASS));
-        $this->assertSame($token, $parser->demand('T_FOO', 'kaput'));
+    public function testLexer() {
+        $this->assertSame($this->lexer, $this->parser->lexer());
     }
 
     public function testExpression() {
-
-        $state = new TokenSet([
-            'T_INT' => '\d+',
-            'T_ADD' => '\\+',
-            'T_MUL' => '\\*'
-        ]);
-
-        $grammar = (new GrammarBuilder())
-            ->prefix('T_INT', new ValueParser())
-            ->infix('T_ADD', new OperationParser('+', 10))
-            ->infix('T_MUL', new OperationParser('*', 20))
-            ->build();
-
-        $lexer = new Scanner(new TokenStream($state, '1*2+3+4'));
-        $parser = new PrattParser($lexer, $grammar);
-        $this->assertSame(9, $parser->expression()->value());
-
-        $lexer = new Scanner(new TokenStream($state, '1+2*3+4'));
-        $parser = new PrattParser($lexer, $grammar);
-        $this->assertSame(11, $parser->expression()->value());
-
-        $lexer = new Scanner(new TokenStream($state, '1+2+3*4'));
-        $parser = new PrattParser($lexer, $grammar);
-        $this->assertSame(15, $parser->expression()->value());
+        $tokens = [
+            new Token('T_INT', '1'),
+            new Token('T_ADD', '+'),
+            new Token('T_INT', '2'),
+            new Token('T_MUL', '*'),
+            new Token('T_INT', '3'),
+            new Token('T_MUL', '*'),
+            new Token('T_INT', '4'),
+            new Token('T_ADD', '+'),
+            new Token('T_INT', '5')
+        ];
+        $this->lexer
+            ->expects($this->any())
+            ->method('next')
+            ->will($this->returnCallback(function() use (&$tokens) {
+                return $tokens ? \array_shift($tokens) : new Token('T_EOF');
+            }));
+        $this->lexer
+            ->expects($this->any())
+            ->method('peek')
+            ->will($this->returnCallback(function() use (&$tokens) {
+                return $tokens[0] ??= new Token('T_EOS');
+            }));
+        $this->grammar
+            ->expects($this->any())
+            ->method('precedence')
+            ->will($this->returnCallback(function($token) {
+                $value = 0;
+                switch ($token->type()) {
+                    case 'T_ADD':
+                        $value = 10;
+                        break;
+                    case 'T_MUL':
+                        $value = 20;
+                        break;
+                    default:
+                        break;
+                }
+                return $value;
+            }));
+        $this->grammar
+            ->expects($this->any())
+            ->method('prefix')
+            ->will($this->returnCallback(function($parser, $token) {
+                return new Value((int) $token->lexeme());
+            }));
+        $this->grammar
+            ->expects($this->any())
+            ->method('infix')
+            ->will($this->returnCallback(function($parser, $left, $token) {
+                $value = 0;
+                switch ($token->type()) {
+                    case 'T_ADD':
+                        $right = $parser->expression(10);
+                        $value = $left->value + $right->value;
+                        break;
+                    case 'T_MUL':
+                        $right = $parser->expression(20);
+                        $value = $left->value * $right->value;
+                        break;
+                    default:
+                        throw new \RuntimeException();
+                }
+                return new Value($value);
+            }));
+        $this->assertEquals(30, $this->parser->expression()->value);
     }
 
     public function testToString() {
-        $this->assertIsString(
-            (string) new PrattParser(
-                $this->createMock(Lexer::CLASS),
-                $this->createMock(Grammar::CLASS)
-            )
-        );
+        $this->assertIsString((string) $this->parser);
     }
 
 }

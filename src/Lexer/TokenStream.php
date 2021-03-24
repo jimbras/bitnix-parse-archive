@@ -17,18 +17,18 @@
 
 namespace Bitnix\Parse\Lexer;
 
-use InvalidArgumentException,
+use Error,
+    InvalidArgumentException,
     RuntimeException,
-    Throwable,
     Bitnix\Parse\ParseFailure,
     Bitnix\Parse\Position,
     Bitnix\Parse\Token,
     Bitnix\Parse\Tokenizer;
 
 /**
- * @version 0.1.0
+ * Default tokenizer.
  */
-final class TokenStream implements Tokenizer, Shifter {
+final class TokenStream implements Tokenizer, Stack {
 
     public const EOS_TOKEN  = 'eos_token';
     public const STACK_SIZE = 'stack_size';
@@ -39,44 +39,9 @@ final class TokenStream implements Tokenizer, Shifter {
     ];
 
     /**
-     * @var State
-     */
-    private State $state;
-
-    /**
      * @var resource
      */
     private $stream;
-
-    /**
-     * @var bool
-     */
-    private bool $valid = true;
-
-    /**
-     * @var int
-     */
-    private int $limit = -1;
-
-    /**
-     * @var string
-     */
-    private string $eos;
-
-    /**
-     * @var bool
-     */
-    private bool $skip = false;
-
-    /**
-     * @var int
-     */
-    private int $size = 1;
-
-    /**
-     * @var array
-     */
-    private array $stack = [];
 
     /**
      * @var null|string
@@ -91,128 +56,77 @@ final class TokenStream implements Tokenizer, Shifter {
     /**
      * @var int
      */
-    private int $offset = -1;
+    private int $offset = 0;
+
+    /**
+     * @var int
+     */
+    private int $size;
+
+    /**
+     * @var int
+     */
+    private int $count = 0;
+
+    /**
+     * @var array
+     */
+    private array $stack = [];
+
+    /**
+     * @var State
+     */
+    private State $state;
+
+    /**
+     * @var bool
+     */
+    private bool $valid = true;
+
+    /**
+     * @var Token
+     */
+    private ?Token $done = null;
+
+    /**
+     * @var string
+     */
+    private string $eos;
 
     /**
      * @param State $main
-     * @param string|resource $input
+     * @param resource $input
      * @param array $options
      * @throws InvalidArgumentException
      * @throws RuntimeException
+     * @throws TypeError
      */
-    public function __construct(State $main, $input, array $options = []) {
+    private function __construct(State $main, $input, array $options = []) {
+        $options += self::DEFAULT_OPTIONS;
+
+        $this->stream = $input;
+
         $this->state = $main;
-        $this->options($options);
-        $this->stream($input);
+        $this->size = $options[self::STACK_SIZE];
+        if ($this->size < 1) {
+            throw new InvalidArgumentException('Stack size must be >= 0');
+        }
+
+        $this->eos = $options[self::EOS_TOKEN];
+
         $this->read();
     }
 
-    /**
-     * ...
-     */
     public function __destruct() {
         $this->release();
     }
 
-    /**
-     * ...
-     */
     private function release() : void {
+        $this->valid = false;
         if (\is_resource($this->stream)) {
             \fclose($this->stream);
             $this->stream = null;
         }
-        $this->valid = false;
-    }
-
-    /**
-     * @param array $options
-     * @throws InvalidArgumentException
-     */
-    private function options(array $options) : void {
-        $options += self::DEFAULT_OPTIONS;
-
-        $limit = $options[self::STACK_SIZE];
-        if (!\is_int($limit) || $limit < 1) {
-            throw new InvalidArgumentException('Invalid stack size');
-        }
-
-        $eos = $options[self::EOS_TOKEN];
-        if (!\is_string($eos)) {
-            throw new InvalidArgumentException('Invalid end of stream token type');
-        }
-
-        $this->limit = $limit;
-        $this->eos = $eos;
-    }
-
-    /**
-     * @param mixed $input
-     * @throws InvalidArgumentException
-     */
-    private function stream($input) : void {
-
-        if (\is_string($input)) {
-            $this->stream = \fopen('php://memory', 'wb+');
-            \fwrite($this->stream, $input);
-            \rewind($this->stream);
-            return;
-        }
-
-        if (\is_resource($input) && 'stream' === \get_resource_type($input)) {
-            $this->stream = $input;
-            return;
-        }
-
-        throw new InvalidArgumentException(\sprintf(
-            'Invalid token stream: string or stream required, got %s',
-            \is_object($input) ? \get_class($input) : \gettype($input)
-        ));
-    }
-
-    /**
-     * @return bool
-     * @throws RuntimeException
-     */
-    private function read() : bool {
-        $line = @\fgets($this->stream);
-
-        if (false !== $line) {
-
-            $this->buffer = $line;
-            ++$this->line;
-            $this->offset = 0;
-
-            return true;
-        }
-
-        $eos = \feof($this->stream);
-        $this->release();
-
-        if (!$eos) {
-            throw new RuntimeException('Unable to read from input stream');
-        }
-
-        return false;
-
-    }
-
-    /**
-     * ...
-     */
-    public function skip() : void {
-        $this->skip = true;
-    }
-
-    /**
-     * @throws RuntimeException
-     */
-    public function pop() : void {
-        if ($this->size === 1) {
-            throw new RuntimeException('Cannot pop a tokenizer state from an empty stack');
-        }
-        --$this->size;
-        $this->state = \array_pop($this->stack);
     }
 
     /**
@@ -220,12 +134,50 @@ final class TokenStream implements Tokenizer, Shifter {
      * @throws RuntimeException
      */
     public function push(State $state) : void {
-        if ($this->size === $this->limit) {
-            throw new RuntimeException('Cannot push a tokenizer state into a full stack');
+        if ($this->count === $this->size) {
+            throw new RuntimeException('Push failed... stack is full');
         }
-        ++$this->size;
+
+        ++$this->count;
         $this->stack[] = $this->state;
         $this->state = $state;
+    }
+
+    /**
+     * @throws RuntimeException
+     */
+    public function pop() : State {
+        if (0 === $this->count) {
+            throw new RuntimeException('Pop failed... stack is empty');
+        }
+
+        --$this->count;
+        $state = $this->state;
+        $this->state = \array_pop($this->stack);
+        return $state;
+    }
+
+    /**
+     * @return bool
+     * @throws RuntimeException
+     */
+    private function read() : bool {
+
+        try {
+            if (false !== ($line = fgets($this->stream))) {
+                $this->buffer = $line;
+                ++$this->line;
+                $this->offset = 0;
+                return true;
+            }
+        } catch (Error $x) {
+            $this->release();
+            throw new RuntimeException('Tokenizer read failure', 0, $x);
+        }
+
+        $this->release();
+
+        return false;
     }
 
     /**
@@ -237,34 +189,60 @@ final class TokenStream implements Tokenizer, Shifter {
 
     /**
      * @return Token
+     */
+    private function eos() : Token {
+        return $this->done ??= new Token($this->eos);
+    }
+
+    /**
+     * @return Token
      * @throws ParseFailure
+     * @throws RuntimeException
      */
     public function next() : Token {
 
-        if (!$this->valid) {
-            return new Token($this->eos);
+        if (!$this->valid || !$this->trim()) {
+            return $this->eos();
         }
+
+        $token = $this->state->match($this, $this->buffer, $this->offset);
+
+        if (!$token || 0 === ($bytes = \strlen($token->lexeme()))) {
+            $this->error('Unexpected token');
+        }
+
+        $this->offset += $bytes;
+
+        $this->trim();
+
+        return $token;
+    }
+
+    /**
+     * @return bool
+     */
+    private function done() : bool {
+        return !isset($this->buffer[$this->offset]) && !$this->read();
+    }
+
+    /**
+     * @return bool
+     * @throws RuntimeException
+     */
+    private function trim() : bool {
 
         do {
 
-            $this->skip = false;
-
-            if (!isset($this->buffer[$this->offset]) && !$this->read()) {
-                return new Token($this->eos);
+            if ($this->done()) {
+                return false;
             }
 
-            $token = $this->state->token($this, $this->buffer, $this->offset);
-
-            if (!$token || 0 === ($bytes = \strlen($token->lexeme()))) {
-                $this->error('Unexpected token');
-            }
-
-            // may need fixing later on...
+            $bytes = $this->state->skip($this->buffer, $this->offset);
             $this->offset += $bytes;
 
-        } while ($this->skip);
+        } while ($bytes > 0);
 
-        return $token;
+        return true;
     }
 
     /**
@@ -272,12 +250,14 @@ final class TokenStream implements Tokenizer, Shifter {
      */
     public function position() : Position {
         $offset = $this->offset;
+
         if (null !== $this->buffer) {
             // fix offset if needed...
             while (!isset($this->buffer[$offset])) {
                 --$offset;
             }
         }
+
         return new Position($this->buffer, $this->line, $offset);
     }
 
@@ -294,5 +274,60 @@ final class TokenStream implements Tokenizer, Shifter {
      */
     public function __toString() : string {
         return self::CLASS;
+    }
+
+    /**
+     * @param State $main
+     * @param string $input
+     * @param array $options
+     * @return self
+     * @throws InvalidArgumentException
+     * @throws RuntimeException
+     * @throws TypeError
+     */
+    public static function fromString(State $main, string $input, array $options = []) : self {
+        $stream = \fopen('php://memory', 'wb+');
+        \fwrite($stream, $input);
+        \rewind($stream);
+        return new self($main, $stream, $options);
+    }
+
+    /**
+     * @param State $main
+     * @param string $file
+     * @param array $options
+     * @return self
+     * @throws InvalidArgumentException
+     * @throws RuntimeException
+     * @throws TypeError
+     */
+    public static function fromFile(State $main, string $file, array $options = []) : self {
+        if (\is_file($file) && \is_readable($file)) {
+            return self::fromString($main, \file_get_contents($file), $options);
+        }
+
+        throw new InvalidArgumentException(\sprintf(
+            'Invalid or unreadable token stream file: %s', $file
+        ));
+    }
+
+    /**
+     * @param State $main
+     * @param resource $stream
+     * @param array $options
+     * @return self
+     * @throws InvalidArgumentException
+     * @throws RuntimeException
+     * @throws TypeError
+     */
+    public static function fromStream(State $main, $stream, array $options = []) : self {
+        if (\is_resource($stream) && 'stream' === \get_resource_type($stream)) {
+            return new self($main, $stream, $options);
+        }
+
+        throw new InvalidArgumentException(\sprintf(
+            'Invalid token stream: string or stream required, got %s',
+            \is_object($stream) ? \get_class($stream) : \gettype($stream)
+        ));
     }
 }

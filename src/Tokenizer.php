@@ -17,8 +17,10 @@
 
 namespace Bitnix\Parse;
 
+use RuntimeException;
+
 /**
- * @version 0.1.0
+ * Splits an input stream into tokens.
  */
 interface Tokenizer {
 
@@ -30,6 +32,7 @@ interface Tokenizer {
     /**
      * @return Token
      * @throws ParseFailure
+     * @throws RuntimeException
      */
     public function next() : Token;
 
@@ -43,4 +46,5 @@ interface Tokenizer {
      * @throws ParseFailure
      */
     public function error(string $message) : void;
+
 }

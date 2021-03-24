@@ -18,7 +18,7 @@
 namespace Bitnix\Parse;
 
 /**
- * @version 0.1.0
+ * The smallest lexical unit...
  */
 final class Token {
 
@@ -34,9 +34,9 @@ final class Token {
 
     /**
      * @param string $type
-     * @param string $lexeme
+     * @param null|string $lexeme
      */
-    public function __construct(string $type, string $lexeme = '') {
+    public function __construct(string $type, string $lexeme = null) {
         $this->type = $type;
         $this->lexeme = $lexeme;
     }
@@ -61,4 +61,5 @@ final class Token {
     public function __toString() : string {
         return \sprintf('%s (%s)', $this->type, $this->lexeme);
     }
+
 }

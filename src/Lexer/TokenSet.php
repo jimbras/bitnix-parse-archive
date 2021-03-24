@@ -23,90 +23,122 @@ use InvalidArgumentException,
     Bitnix\Parse\Token;
 
 /**
- * @version 0.1.0
+ * Default lexer state implementation.
+ *
+ * Uses regexes and events to process input streams.
  */
 final class TokenSet implements State {
 
     /**
      * @var string
      */
-    private string $regex;
+    private string $match;
 
     /**
      * @var array
      */
-    private array $handlers = [];
+    private array $matchers = [];
 
     /**
-     * @param array $patterns
-     * @throws \InvalidArgumentException
+     * @var string
      */
-    public function __construct(array $patterns) {
-        if (empty($patterns)) {
-            throw new InvalidArgumentException('No token patterns to compile');
+    private ?string $skip = null;
+
+    /**
+     * @param array $match
+     * @param array $skip
+     * @param array $actions
+     * @throws InvalidArgumentException
+     */
+    public function __construct(array $match, array $skip = [], array $actions = []) {
+        if (empty($match)) {
+            throw new InvalidArgumentException('Empty token set is not allowed');
         }
 
         $fn = function() {};
-
         $marked = \array_map(function($matcher, $type) use($fn) {
-            $this->handlers[$type] = $fn;
+            $this->matchers[$type] = $fn;
             return \str_replace('~', '\\~', $matcher) . '(*MARK:' . $type . ')';
-        }, $patterns, \array_keys($patterns));
+        }, $match, \array_keys($match));
+        $this->match = $this->compile($marked, $match);
 
-        $regex = '~(' . \implode(')|(', \array_values($marked)) . ')~Au';
+        if ($skip) {
+            \array_walk($skip, fn($matcher) => \str_replace('~', '\\~', $matcher));
+            $this->skip = $this->compile($skip);
+        }
+
+        foreach ($actions as $type => $fn) {
+            $this->bind($type, $fn);
+        }
+    }
+
+    /**
+     * @param array $patterns
+     * @param array $source
+     * @return string
+     * @throws InvalidArgumentException
+     */
+    private function compile(array $patterns, array $source = []) : string {
+        $regex = '~(' . \implode(')|(', \array_values($patterns)) . ')~Au';
 
         if (false === (@\preg_match($regex, ''))) {
             throw new InvalidArgumentException(\sprintf(
-                'Invalid token set (%s) compiled pattern',
-                \implode(', ', \array_keys($patterns))
+                'Failed to compile tokens: %s',
+                \implode(', ', \array_keys($source ?: $patterns))
             ));
         }
 
-        $this->regex = $regex;
+        return $regex;
+    }
+
+    /**
+     * @param string $buffer
+     * @param int $offset
+     * @return int
+     * @throws RuntimeException
+     */
+    public function skip(string $buffer, int $offset) : int {
+        if ($this->skip && \preg_match($this->skip, $buffer, $matches, 0, $offset)) {
+            return \strlen($matches[0]);
+        }
+        return 0;
     }
 
     /**
      * @param string $type
      * @param callable $handler
-     * @return self
      * @throws LogicException
      */
-    public function on(string $type, callable $handler) : TokenSet {
-        if (!isset($this->handlers[$type])) {
+    private function bind(string $type, callable $handler) : void {
+        if (!isset($this->matchers[$type])) {
             throw new LogicException(sprintf(
-                'Unknown token type %s in set (%s)',
-                $type, \implode(', ', \array_keys($this->handlers))
+                'Failed to bind action handler: no token %s in set (%s)',
+                $type,
+                \implode(', ', \array_keys($this->matchers))
             ));
         }
-        $this->handlers[$type] = $handler;
-        return $this;
+        $this->matchers[$type] = $handler;
     }
 
     /**
-     * @param Shifter $shifter
+     * @param Stack $stack
      * @param string $buffer
      * @param int $offset
      * @return null|Token
      * @throws RuntimeException
      */
-    public function token(Shifter $shifter, string $buffer, int $offset) : ?Token {
-        if (!\preg_match($this->regex, $buffer, $matches, 0, $offset)) {
+    public function match(Stack $stack, string $buffer, int $offset) : ?Token {
+        if (!\preg_match($this->match, $buffer, $matches, 0, $offset)) {
             return null;
         }
 
         if (!isset($matches['MARK'])) {
-            throw new RuntimeException(\sprintf(
-                'Unable to determine token type from token set (%s)',
-                \implode(', ', \array_keys($this->handlers))
-            ));
+            throw new RuntimeException('Unable to determine token type');
         }
 
-        $type = $matches['MARK'];
-        $value = $matches[0];
-
-        $this->handlers[$type]($shifter, $value);
-
-        return new Token($type, $value);
+        $token = new Token($type = $matches['MARK'], $matches[0]);
+        $this->matchers[$type]($stack, $token);
+        return $token;
     }
 
     /**

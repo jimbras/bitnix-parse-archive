@@ -19,107 +19,31 @@ namespace Bitnix\Parse\Parser;
 
 use Bitnix\Parse\Expression,
     Bitnix\Parse\Lexer,
-    Bitnix\Parse\ParseFailure,
-    Bitnix\Parse\Parser,
-    Bitnix\Parse\Position,
-    Bitnix\Parse\Token,
-    Bitnix\Parse\Tokenizer,
-    Bitnix\Parse\Lexer\Scanner;
+    Bitnix\Parse\Parser;
 
 /**
- * @version 0.1.0
+ * ...
  */
-final class PrattParser implements Parser {
-
-    /**
-     * @var Grammar
-     */
-    private Grammar $grammar;
-
-    /**
-     * @var Lexer
-     */
-    private Lexer $lexer;
+abstract class PrattParser implements Parser {
 
     /**
      * @param Lexer $lexer
      * @param Grammar $grammar
      */
-    public function __construct(Lexer $lexer, Grammar $grammar) {
-        $this->lexer = $lexer;
-        $this->grammar = $grammar;
-    }
+    public function __construct(private Lexer $lexer, private Grammar $grammar) {}
 
     /**
-     * @return bool
+     * @return Lexer
      */
-    public function valid() : bool {
-        return $this->lexer->valid();
-    }
-
-    /**
-     * @return Token
-     * @throws ParseFailure
-     */
-    public function next() : Token {
-        return $this->lexer->next();
-    }
-
-    /**
-     * @return Position
-     */
-    public function position() : Position {
-        return $this->lexer->position();
-    }
-
-    /**
-     * @param string $message
-     * @throws ParseFailure
-     */
-    public function error(string $message) : void {
-        $this->lexer->error($message);
-    }
-
-    /**
-     * @param int $dist
-     * @return Token
-     * @throws ParseFailure
-     */
-    public function peek(int $dist = 0) : Token {
-        return $this->lexer->peek($dist);
-    }
-
-    /**
-     * @param string ...$types
-     * @return bool
-     */
-    public function match(string ...$types) : bool {
-        return $this->lexer->match(...$types);
-    }
-
-    /**
-     * @param string ...$types
-     * @return null|Token
-     * @throws ParseFailure
-     */
-    public function consume(string ...$types) : ?Token {
-        return $this->lexer->consume(...$types);
-    }
-
-    /**
-     * @param string $type
-     * @param null|string $message
-     * @return Token
-     * @throws ParseFailure
-     */
-    public function demand(string $type, string $message = null) : Token {
-        return $this->lexer->demand($type, $message);
+    public function lexer() : Lexer {
+        return $this->lexer;
     }
 
     /**
      * @param int $precedence
      * @return Expression
      * @throws ParseFailure
+     * @throws RuntimeException
      */
     public function expression(int $precedence = 0) : Expression {
         $left = $this->grammar->prefix($this, $this->lexer->next());

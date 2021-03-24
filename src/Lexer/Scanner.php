@@ -24,31 +24,24 @@ use Bitnix\Parse\Lexer,
     Bitnix\Parse\Tokenizer;
 
 /**
- * @version 0.1.0
+ * Default lexer implementation.
  */
 final class Scanner implements Lexer {
 
     /**
-     * @var Tokenizer;
+     * @var int
      */
-    private Tokenizer $tokenizer;
+    private int $cached = 0;
 
     /**
      * @var array
      */
-    private array $tokens = [];
-
-    /**
-     * @var int
-     */
-    private int $buffer = 0;
+    private array $cache = [];
 
     /**
      * @param Tokenizer $tokenizer
      */
-    public function __construct(Tokenizer $tokenizer) {
-        $this->tokenizer = $tokenizer;
-    }
+    public function __construct(private Tokenizer $tokenizer) {}
 
     /**
      * ...
@@ -61,8 +54,8 @@ final class Scanner implements Lexer {
      * @return bool
      */
     public function valid() : bool {
-        if ($this->buffer) {
-            return $this->tokens[0][0];
+        if ($this->cached) {
+            return $this->cache[0][0];
         }
         return $this->tokenizer->valid();
     }
@@ -70,11 +63,12 @@ final class Scanner implements Lexer {
     /**
      * @return Token
      * @throws ParseFailure
+     * @throws RuntimeException
      */
     public function next() : Token {
-        if ($this->buffer) {
-            --$this->buffer;
-            return \array_shift($this->tokens)[2];
+        if ($this->cached) {
+            --$this->cached;
+            return \array_shift($this->cache)[2];
         }
         return $this->tokenizer->next();
     }
@@ -83,30 +77,11 @@ final class Scanner implements Lexer {
      * @return Position
      */
     public function position() : Position {
-        if ($this->buffer) {
-            return $this->tokens[0][1];
+        if ($this->cached) {
+            return $this->cache[0][1];
         }
+
         return $this->tokenizer->position();
-    }
-
-    /**
-     * @param int $dist
-     * @return Token
-     * @throws ParseFailure
-     */
-    public function peek(int $dist = 0) : Token {
-        $dist = \max(0, $dist);
-
-        while ($dist >= $this->buffer) {
-            ++$this->buffer;
-            $this->tokens[] = [
-                $this->tokenizer->valid(),
-                $this->tokenizer->position(),
-                $this->tokenizer->next()
-            ];
-        }
-
-        return $this->tokens[$dist][2];
     }
 
     /**
@@ -114,7 +89,28 @@ final class Scanner implements Lexer {
      * @throws ParseFailure
      */
     public function error(string $message) : void {
-        $this->tokenizer->error($message);
+        throw new ParseFailure($message, $this->position());
+    }
+
+    /**
+     * @param int $dist
+     * @return Token
+     * @throws ParseFailure
+     * @throws RuntimeException
+     */
+    public function peek(int $dist = 0) : Token {
+        $dist = \max(0, $dist);
+
+        while ($dist >= $this->cached) {
+            ++$this->cached;
+            $this->cache[] = [
+                $this->tokenizer->valid(),
+                $this->tokenizer->position(),
+                $this->tokenizer->next()
+            ];
+        }
+
+        return $this->cache[$dist][2];
     }
 
     /**
@@ -135,6 +131,7 @@ final class Scanner implements Lexer {
      * @param string ...$types
      * @return null|Token
      * @throws ParseFailure
+     * @throws RuntimeException
      */
     public function consume(string ...$types) : ?Token {
         return $this->match(...$types) ? $this->next() : null;
@@ -145,9 +142,9 @@ final class Scanner implements Lexer {
      * @param null|string $message
      * @return Token
      * @throws ParseFailure
+     * @throws RuntimeException
      */
     public function demand(string $type, string $message = null) : Token {
-
         if (null !== ($token = $this->consume($type))) {
             return $token;
         }
@@ -167,7 +164,6 @@ final class Scanner implements Lexer {
      * @return string
      */
     public function __toString() : string {
-        return static::CLASS;
+        return self::CLASS;
     }
-
 }

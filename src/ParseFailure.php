@@ -20,11 +20,13 @@ namespace Bitnix\Parse;
 use RuntimeException;
 
 /**
- * @version 0.1.0
+ * Something went wrong while parsing... and that's it.
  */
 class ParseFailure extends RuntimeException {
 
     /**
+     * Where the failure happened. It can be unknown...
+     *
      * @var Position
      */
     private Position $position;

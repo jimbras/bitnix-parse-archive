@@ -18,6 +18,6 @@
 namespace Bitnix\Parse;
 
 /**
- * @version 0.1.0
+ * Marker interface for expression objects returned by the parser.
  */
 interface Expression {}

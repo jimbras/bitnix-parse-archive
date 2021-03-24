@@ -20,257 +20,178 @@ namespace Bitnix\Parse\Lexer;
 use InvalidArgumentException,
     RuntimeException,
     Bitnix\Parse\ParseFailure,
-    Bitnix\Parse\Token,
     PHPUnit\Framework\TestCase;
 
-/**
- * ...
- *
- * @version 0.1.0
- */
 class TokenStreamTest extends TestCase {
 
-    private State $state;
+    public function testNext() {
 
-    public function setUp() : void {
-        $this->state = $this->createMock(State::CLASS);
+        $input = "1 2\n3 4";
+        $tokens = new TokenSet([
+            'T_INT'  => '\d+'
+        ], [
+            'T_SKIP' => '\s+'
+        ]);
+
+        $stream = TokenStream::fromString($tokens, $input);
+
+        $this->assertTrue($stream->valid());
+
+        $pos = $stream->position();
+        $this->assertEquals(1, $pos->line());
+        $this->assertEquals(1, $pos->column());
+        $this->assertEquals("1 2\n", $pos->buffer());
+
+        $token = $stream->next();
+        $this->assertEquals(1, $token->lexeme());
+        $this->assertTrue($stream->valid());
+
+        $pos = $stream->position();
+        $this->assertEquals(1, $pos->line());
+        $this->assertEquals(3, $pos->column());
+        $this->assertEquals("1 2\n", $pos->buffer());
+
+        $token = $stream->next();
+        $this->assertEquals(2, $token->lexeme());
+        $this->assertTrue($stream->valid());
+
+        $pos = $stream->position();
+        $this->assertEquals(2, $pos->line());
+        $this->assertEquals(1, $pos->column());
+        $this->assertEquals("3 4", $pos->buffer());
+
+        $token = $stream->next();
+        $this->assertEquals(3, $token->lexeme());
+        $this->assertTrue($stream->valid());
+
+        $pos = $stream->position();
+        $this->assertEquals(2, $pos->line());
+        $this->assertEquals(3, $pos->column());
+        $this->assertEquals("3 4", $pos->buffer());
+
+        $token = $stream->next();
+        $this->assertEquals(4, $token->lexeme());
+        $this->assertFalse($stream->valid());
+
+        $pos = $stream->position();
+        $this->assertEquals(2, $pos->line());
+        $this->assertEquals(3, $pos->column());
+        $this->assertEquals("3 4", $pos->buffer());
+
+        $token = $stream->next();
+        $this->assertEquals('T_EOS', $token->type());
+        $this->assertSame($token, $stream->next());
+    }
+
+    public function testNextError() {
+        $this->expectException(ParseFailure::CLASS);
+
+        $tokens = new TokenSet([
+            'T_INT'  => '\d+'
+        ], [
+            'T_SKIP' => '\s+'
+        ]);
+
+        $stream = TokenStream::fromString($tokens, 'This will fail');
+        $stream->next();
+    }
+
+    public function testStackSizeError() {
+        $this->expectException(InvalidArgumentException::CLASS);
+        TokenStream::fromString(
+            $this->createMock(State::CLASS),
+            'this will fail',
+            [TokenStream::STACK_SIZE => -1]
+        );
     }
 
     public function testStack() {
-        $this->state
-            ->expects($this->once())
-            ->method('token')
-            ->will($this->returnValue(new Token('T_BAR', 'bar')));
+        $main = $this->createMock(State::CLASS);
+        $first = $this->createMock(State::CLASS);
+        $second = $this->createMock(State::CLASS);
+        $third = $this->createMock(State::CLASS);
 
-        $stream = new TokenStream($this->state, 'foo bar', [TokenStream::STACK_SIZE => 2]);
-        $state = $this->createMock(State::CLASS);
-        $state
-            ->expects($this->once())
-            ->method('token')
-            ->will($this->returnValue(new Token('T_FOO', 'foo')));
+        $tokens = TokenStream::fromString($main, '...', [TokenStream::STACK_SIZE => 2]);
 
         try {
-            $stream->pop();
-            $this->fail('Pop should have failed');
+            $tokens->pop();
+            $this->fail('Stack pop failed to throw exception...');
         } catch (RuntimeException $x) {}
 
-        $stream->push($state); // ok
+        $tokens->push($first);
+        $tokens->push($second);
 
         try {
-            $stream->push($state);
-            $this->fail('Push should have failed');
+            $tokens->push($third);
+            $this->fail('Stack push failed to throw exception...');
         } catch (RuntimeException $x) {}
 
-        // use state in stack
-        $this->assertEquals('T_FOO', $stream->next()->type());
+        $this->assertSame($second, $tokens->pop());
+        $this->assertSame($first, $tokens->pop());
 
-        $stream->pop(); // ok
-
-        // use main state
-        $this->assertEquals('T_BAR', $stream->next()->type());
+        try {
+            $tokens->pop();
+            $this->fail('Stack pop failed to throw exception...');
+        } catch (RuntimeException $x) {}
     }
 
-    public function testSkip() {
-        $this->state
-            ->expects($this->once())
-            ->method('token')
-            ->will($this->returnCallback(function($shifter) {
-                $shifter->skip();
-                return new Token('T_FOO', 'foo');
-            }));
-
-        $stream = new TokenStream($this->state, 'foo', [TokenStream::EOS_TOKEN => 'T_END']);
-        $token = $stream->next();
-        $this->assertEquals('T_END', $token->type());
+    public function testCreateFromFile() {
+        $main = new TokenSet([
+            'T_INT'  => '\d+'
+        ], [
+            'T_SKIP' => '\s+'
+        ]);
+        $stream = TokenStream::fromFile($main, __DIR__ . '/_empty', [TokenStream::EOS_TOKEN => 'T_XXX']);
+        $this->assertEquals('T_XXX', $stream->next()->type());
     }
 
-    public function testNextParseFailureOnEmptyTokenValue() {
-        $this->expectException(ParseFailure::CLASS);
-        $this->state
-            ->expects($this->once())
-            ->method('token')
-            ->will($this->returnValue(new Token('T_KAPUT')));
-
-        $stream = new TokenStream($this->state, 'foo');
-        $stream->next();
+    public function testCreateFromFileError() {
+        $this->expectException(InvalidArgumentException::CLASS);
+        $main = $this->createMock(State::CLASS);
+        TokenStream::fromFile($main, __DIR__ . '/_not_found');
     }
 
-    public function testNextParseFailureOnNull() {
-        $this->expectException(ParseFailure::CLASS);
-        $this->state
-            ->expects($this->once())
-            ->method('token')
-            ->will($this->returnValue(null));
-
-        $stream = new TokenStream($this->state, 'foo');
-        $stream->next();
+    public function testCreateFromStream() {
+        $main = new TokenSet([
+            'T_INT'  => '\d+'
+        ], [
+            'T_SKIP' => '\s+'
+        ]);
+        $stream = TokenStream::fromStream($main, \fopen('php://memory', 'wb+'), [TokenStream::EOS_TOKEN => 'T_XXX']);
+        $this->assertEquals('T_XXX', $stream->next()->type());
     }
 
-    public function testNext() {
-        $stream = null;
-        $tokens = [
-            [0, new Token('T_FOO', 'foo')],
-            [3, new Token('T_SPACE', ' ')],
-            [4, new Token('T_BAR', 'bar')],
-            [7, new Token('T_EOL', PHP_EOL)]
-        ];
-
-        $this->state
-            ->expects($this->exactly(4))
-            ->method('token')
-            ->will($this->returnCallback(function($shifter, $buffer, $offset) use (&$tokens, &$stream) {
-                $this->assertSame($stream, $shifter);
-                $this->assertEquals('foo bar' . PHP_EOL, $buffer);
-                $info = \array_shift($tokens);
-                $this->assertEquals($info[0], $offset);
-                return $info[1];
-            }));
-
-        $input = 'foo bar' . PHP_EOL;
-        $stream = new TokenStream($this->state, $input);
-        $this->assertTrue($stream->valid());
-        $pos = $stream->position();
-        $this->assertEquals($input, $pos->buffer());
-        $this->assertEquals(1, $pos->line());
-        $this->assertEquals(1, $pos->column());
-
-        // 1
-        $token = $stream->next();
-        $this->assertEquals('T_FOO', $token->type());
-        $pos = $stream->position();
-        $this->assertEquals($input, $pos->buffer());
-        $this->assertEquals(1, $pos->line());
-        $this->assertEquals(4, $pos->column());
-        $this->assertTrue($stream->valid());
-
-        // 2
-        $token = $stream->next();
-        $this->assertEquals('T_SPACE', $token->type());
-        $pos = $stream->position();
-        $this->assertEquals($input, $pos->buffer());
-        $this->assertEquals(1, $pos->line());
-        $this->assertEquals(5, $pos->column());
-        $this->assertTrue($stream->valid());
-
-        // 3
-        $token = $stream->next();
-        $this->assertEquals('T_BAR', $token->type());
-        $pos = $stream->position();
-        $this->assertEquals($input, $pos->buffer());
-        $this->assertEquals(1, $pos->line());
-        $this->assertEquals(8, $pos->column());
-        $this->assertTrue($stream->valid());
-
-        // 4
-        $token = $stream->next();
-        $this->assertEquals('T_EOL', $token->type());
-        $pos = $stream->position();
-        $this->assertEquals($input, $pos->buffer());
-        $this->assertEquals(1, $pos->line());
-        $this->assertEquals(8, $pos->column());
-        $this->assertTrue($stream->valid());
-
-        // should not call state to fetch token
-        $token = $stream->next();
-        $this->assertEquals('T_EOS', $token->type());
-        $pos = $stream->position();
-        $this->assertEquals($input, $pos->buffer());
-        $this->assertEquals(1, $pos->line());
-        $this->assertEquals(8, $pos->column());
-        $this->assertFalse($stream->valid());
-
-        // should not call state to fetch token
-        $token = $stream->next();
-        $this->assertEquals('T_EOS', $token->type());
-        $pos = $stream->position();
-        $this->assertEquals($input, $pos->buffer());
-        $this->assertEquals(1, $pos->line());
-        $this->assertEquals(8, $pos->column());
-        $this->assertFalse($stream->valid());
+    public function testCreateFromStreamError() {
+        $this->expectException(InvalidArgumentException::CLASS);
+        $main = $this->createMock(State::CLASS);
+        TokenStream::fromStream($main, $this);
     }
 
     public function testReadError() {
         $this->expectException(RuntimeException::CLASS);
-        $fp = \fopen(__DIR__ . '/_stream/error.txt', 'wb');
-        try {
-            $stream = new TokenStream($this->state, $fp);
-        } finally {
-            @\fclose($fp);
-        }
-    }
 
-    public function testStreamFromResource() {
-        $fp = \fopen('php://memory', 'wb+');
-        \fwrite($fp, 'foo');
-        \rewind($fp);
+        $input = \fopen('php://memory', 'wb+');
+        \fwrite($input, "1\n2");
+        \rewind($input);
 
-        try {
-            $stream = new TokenStream($this->state, $fp);
-            $this->assertTrue($stream->valid());
-            $this->assertTrue(\is_resource($fp));
-        } finally {
-            @\fclose($fp);
-        }
-
-        $fp = \fopen('php://memory', 'wb+');
-
-        try {
-            $stream = new TokenStream($this->state, $fp);
-            $this->assertFalse($stream->valid());
-            $this->assertFalse(\is_resource($fp));
-        } finally {
-            @\fclose($fp);
-        }
-    }
-
-    public function testStreamFromString() {
-        $stream = new TokenStream($this->state, 'foo');
-        $this->assertTrue($stream->valid());
-
-        $stream = new TokenStream($this->state, '');
-        $this->assertFalse($stream->valid());
-    }
-
-    public function testInvalidInputStream() {
-        $this->expectException(InvalidArgumentException::CLASS);
-        new TokenStream($this->state, $this);
-    }
-
-    /** @dataProvider badEosToken */
-    public function testInvalidEOSToken($type) {
-        $this->expectException(InvalidArgumentException::CLASS);
-        new TokenStream($this->state, 'foo', [
-            TokenStream::EOS_TOKEN => $type
+        $main = new TokenSet([
+            'T_INT'  => '\d+'
+        ], [
+            'T_SKIP' => '\s+'
         ]);
-    }
 
-    public function badEosToken() : array {
-        return [
-            [null],
-            [$this],
-            [1],
-            [1.2],
-            [[]]
-        ];
-    }
+        $tokens = TokenStream::fromStream($main, $input);
 
-    /** @dataProvider badStackSize */
-    public function testInvalidStackSize($size) {
-        $this->expectException(InvalidArgumentException::CLASS);
-        new TokenStream($this->state, 'foo', [
-            TokenStream::STACK_SIZE => $size
-        ]);
-    }
+        \fclose($input);
 
-    public function badStackSize() : array {
-        return [
-            ['1'],
-            [0],
-            [-1]
-        ];
+        $tokens->next();
     }
 
     public function testToString() {
-        $this->assertIsString((string) new TokenStream($this->state, 'foo'));
+        $stream = TokenStream::fromString(
+            $this->createMock(State::CLASS),
+            'foo bar baz'
+        );
+        $this->assertIsString((string) $stream);
     }
 }

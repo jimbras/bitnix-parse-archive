@@ -20,67 +20,83 @@ namespace Bitnix\Parse\Lexer;
 use InvalidArgumentException,
     LogicException,
     RuntimeException,
-    PHPUnit\Framework\TestCase,
-    Bitnix\Parse\Token;
+    Bitnix\Parse\Token,
+    PHPUnit\Framework\TestCase;
 
-/**
- * @version 0.1.0
- */
-final class TokenSetTest extends TestCase {
+class TokenSetTest extends TestCase {
 
-    public function testTokenReturnsToken() {
+    public function testMatchReturnsToken() {
         $called = false;
-        $shifter = $this->createMock(Shifter::CLASS);
-        $tokens = new TokenSet(['T_FOO' => 'foo']);
+        $stack = $this->createMock(Stack::CLASS);
+        $tokens = new TokenSet(['T_FOO' => 'foo'], [], [
+            'T_FOO' => function($s, $t) use ($stack, &$called) {
+                $called = true;
+                $this->assertSame($stack, $s);
+                $this->assertInstanceOf(Token::CLASS, $t);
+                $this->assertEquals('T_FOO', $t->type());
+                $this->assertEquals('foo', $t->lexeme());
+            }
+        ]);
 
-        $tokens->on('T_FOO', function($s, $v) use ($shifter, &$called) {
-            $this->assertSame($shifter, $s);
-            $this->assertEquals('foo', $v);
-            $called = true;
-        });
-
-        $token = $tokens->token($shifter, 'foo is bar', 0);
+        $token = $tokens->match($stack, 'foo is bar', 0);
         $this->assertInstanceOf(Token::CLASS, $token);
         $this->assertEquals('T_FOO', $token->type());
         $this->assertEquals('foo', $token->lexeme());
         $this->assertTrue($called);
     }
 
-    public function testTokenReturnsNull() {
-        $tokens = new TokenSet(['T_FOO' => 'foo']);
-        $tokens->on('T_FOO', function() {
-            $this->fail('Unexpected handler call');
-        });
-        $shifter = $this->createMock(Shifter::CLASS);
-        $this->assertNull($tokens->token($shifter, 'This is foo', 0));
+    public function testMatchReturnsNull() {
+        $called = false;
+        $stack = $this->createMock(Stack::CLASS);
+        $tokens = new TokenSet(['T_FOO' => 'foo'], [], [
+            'T_FOO' => function($s, $t) use ($stack, &$called) {
+                $called = true;
+            }
+        ]);
+
+        $this->assertNull($tokens->match($stack, 'foo is bar', 3));
+        $this->assertFalse($called);
     }
 
-    public function testInvalidListener() {
-        $this->expectException(LogicException::CLASS);
-        $tokens = new TokenSet(['T_FOO' => 'foo', 'T_BAR' => 'bar']);
-        $tokens->on('T_ZOID', function() {});
+    public function testSkipReturnsSkippedBytes() {
+        $tokens = new TokenSet(
+            ['T_FOO' => 'foo'],
+            ['T_SKIP' => '\s+']
+        );
+        $this->assertEquals(2, $tokens->skip('  foo is bar', 0));
+        $this->assertEquals(0, $tokens->skip('  foo is bar', 3));
+    }
+
+    public function testEmptyMatchersAreNotAllowed() {
+        $this->expectException(InvalidArgumentException::CLASS);
+        $tokens = new TokenSet([]);
+    }
+
+    public function testMatchersMustCompile() {
+        $this->expectException(InvalidArgumentException::CLASS);
+        $tokens = new TokenSet(['T_FOO' => '(']);
+    }
+
+    public function testSkippersMustCompile() {
+        $this->expectException(InvalidArgumentException::CLASS);
+        $tokens = new TokenSet(['T_FOO' => 'foo'], ['T_SKIP' => '(']);
     }
 
     public function testInvalidMatch() {
         $this->expectException(RuntimeException::CLASS);
         $tokens = new TokenSet(['T_FOO' => 'foo|fuu', 'T_BAR' => 'bar']);
-        $shifter = $this->createMock(Shifter::CLASS);
-        $tokens->token($shifter, 'foo', 0);
+        $stack = $this->createMock(Stack::CLASS);
+        $tokens->match($stack, 'foo', 0);
     }
 
-    public function testInvalidPattern() {
-        $this->expectException(InvalidArgumentException::CLASS);
-        new TokenSet(['T_FOO' => '(']);
-    }
-
-    public function testEmptySetIsNotAllowed() {
-        $this->expectException(InvalidArgumentException::CLASS);
-        new TokenSet([]);
+    public function testCannotBindToUnknownMatchers() {
+        $this->expectException(LogicException::CLASS);
+        $tokens = new TokenSet(['T_FOO' => 'foo'], [], [
+            'T_BAR' => function() {}
+        ]);
     }
 
     public function testToString() {
-        $tokens = new TokenSet(['T_FOO' => 'foo']);
-        $this->assertIsString((string) $tokens);
+        $this->assertIsString((string) new TokenSet(['T_FOO' => 'foo']));
     }
-
 }

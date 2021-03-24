@@ -21,17 +21,25 @@ use RuntimeException,
     Bitnix\Parse\Token;
 
 /**
- * @version 0.1.0
+ * Represents a lexing state.
  */
 interface State {
 
     /**
-     * @param Shifter $shifter
+     * @param string $buffer
+     * @param int $offset
+     * @return int
+     * @throws RuntimeException
+     */
+    public function skip(string $buffer, int $offset) : int;
+
+    /**
+     * @param Stack $stack
      * @param string $buffer
      * @param int $offset
      * @return null|Token
      * @throws RuntimeException
      */
-    public function token(Shifter $shifter, string $buffer, int $offset) : ?Token;
+    public function match(Stack $stack, string $buffer, int $offset) : ?Token;
 
 }

@@ -18,14 +18,21 @@
 namespace Bitnix\Parse;
 
 /**
- * @version 0.1.0
+ * A parser uses a Lexer to transform tokens into something expressive for the
+ * domain.
  */
-interface Parser extends Lexer {
+interface Parser {
+
+    /**
+     * @return Lexer
+     */
+    public function lexer() : Lexer;
 
     /**
      * @param int $precedence
      * @return Expression
-     * @throws ParseFailure
+     * @throws ParseFailure Yep... Bad input turns into this.
+     * @throws RuntimeException Everything else...
      */
     public function expression(int $precedence = 0) : Expression;
 
